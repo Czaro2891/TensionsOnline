@@ -1,0 +1,49 @@
+═══════════════════════════════════════════════════════════════
+🔗 POŁĄCZ FRONTEND Z BACKENDEM - 2 KROKI
+═══════════════════════════════════════════════════════════════
+
+✅ FRONTEND JUŻ WDROŻONY:
+   https://strip-in-the-dark-3opgns7um-cezars-projects-c10d6116.vercel.app
+
+═══════════════════════════════════════════════════════════════
+KROK 1: Dodaj zmienną w Vercel
+═══════════════════════════════════════════════════════════════
+
+OTWÓRZ:
+https://vercel.com/cezars-projects-c10d6116/strip-in-the-dark/settings/environment-variables
+
+KLIKNIJ: "Add New"
+
+WPISZ:
+   Key: REACT_APP_BACKEND_URL
+   Value: (WSTAW TUTAJ URL BACKENDU Z RAILWAY)
+         np. https://xxx.up.railway.app
+
+ZAZNACZ: ✅ Production, ✅ Preview, ✅ Development
+
+KLIKNIJ: "Save"
+
+KLIKNIJ: "Redeploy" (w zakładce Deployments)
+
+═══════════════════════════════════════════════════════════════
+KROK 2: Dodaj zmienną w Railway
+═══════════════════════════════════════════════════════════════
+
+OTWÓRZ: Railway Dashboard → Twój projekt backendu
+
+KLIKNIJ: "Variables" → "New Variable"
+
+WPISZ:
+   Name: FRONTEND_URL
+   Value: https://strip-in-the-dark-3opgns7um-cezars-projects-c10d6116.vercel.app
+
+KLIKNIJ: "Save"
+
+Railway automatycznie zrestartuje backend.
+
+═══════════════════════════════════════════════════════════════
+✅ GOTOWE!
+═══════════════════════════════════════════════════════════════
+
+Teraz wszystko jest połączone! 🎉
+

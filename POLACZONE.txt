@@ -1,0 +1,17 @@
+✅ POŁĄCZONE!
+
+Frontend URL: https://strip-in-the-dark-3opgns7um-cezars-projects-c10d6116.vercel.app
+Backend URL: https://alert-wholeness-production.up.railway.app
+
+Zmienne środowiskowe dodane w Vercel:
+- REACT_APP_BACKEND_URL = https://alert-wholeness-production.up.railway.app ✅
+
+Teraz dodaj w Railway:
+1. Otwórz panel Railway
+2. Variables → New Variable
+3. Name: FRONTEND_URL
+4. Value: https://strip-in-the-dark-3opgns7um-cezars-projects-c10d6116.vercel.app
+5. Zapisz
+
+Potem redeploy frontendu (wykonam to teraz)
+

@@ -72,9 +72,26 @@ Wartość: (zostaw puste na razie)
 
 Teraz masz backend na Railway! 
 
-**Następny krok**: Wdróż frontend na Vercel i połącz je:
-- W Vercel dodaj: `REACT_APP_BACKEND_URL` = URL z Railway
-- W Railway dodaj: `FRONTEND_URL` = URL z Vercel
+**Następny krok**: Połącz frontend z backendem:
+
+### W Vercel (Frontend):
+1. Otwórz: https://vercel.com/cezars-projects-c10d6116/strip-in-the-dark/settings/environment-variables
+2. Kliknij: "Add New"
+3. Dodaj:
+   - **Name**: `REACT_APP_BACKEND_URL`
+   - **Value**: `https://xxx.up.railway.app` (wstaw tutaj URL backendu z Railway!)
+   - **Environments**: zaznacz wszystkie (Production, Preview, Development)
+4. Zapisz
+5. Redeploy projektu
+
+### W Railway (Backend):
+1. Kliknij: "Variables"
+2. Dodaj:
+   - **Name**: `FRONTEND_URL`
+   - **Value**: `https://strip-in-the-dark-3opgns7um-cezars-projects-c10d6116.vercel.app`
+3. Zapisz (Railway automatycznie zrestartuje)
+
+📖 **Pełna instrukcja**: Zobacz `JAK_POLACZYC.md` lub `POLACZ_BACKEND_FRONTEND.md`
 
 ---
 
