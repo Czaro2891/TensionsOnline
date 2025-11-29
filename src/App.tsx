@@ -32,8 +32,12 @@ function App() {
       setUserId(newUserId);
       localStorage.setItem('userId', newUserId);
     }
+  }, []);
 
-    // Load custom cards
+  // Load custom cards when userId is available
+  useEffect(() => {
+    if (!userId) return;
+
     const storedCards = localStorage.getItem(`customCards_${userId}`);
     if (storedCards) {
       try {
@@ -110,7 +114,7 @@ function App() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 overflow-x-hidden">
       <AnimatePresence mode="wait">
         {currentView === 'lobby' && (
           <motion.div

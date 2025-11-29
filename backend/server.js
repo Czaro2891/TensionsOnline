@@ -20,8 +20,12 @@ const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' }),
+    // File transports only in development
+    ...(process.env.NODE_ENV !== 'production' ? [
+      new winston.transports.File({ filename: 'error.log', level: 'error' }),
+      new winston.transports.File({ filename: 'combined.log' })
+    ] : []),
+    // Always use console
     new winston.transports.Console({
       format: winston.format.simple()
     })
@@ -128,6 +132,7 @@ app.get('/api/rooms', (req, res) => {
     .filter(room => !room.isPrivate)
     .map(room => ({
       id: room.id,
+      code: room.id, // Room ID is the code
       name: room.name,
       playerCount: room.getPlayerCount(),
       maxPlayers: room.maxPlayers,
@@ -156,8 +161,10 @@ app.post('/api/rooms/create', (req, res) => {
     res.json({
       success: true,
       roomId,
+      roomCode: roomId, // Room ID is the code
       room: {
         id: roomId,
+        code: roomId,
         name: room.name,
         intensityLevel: room.intensityLevel,
         hasPassword: room.hasPassword,
@@ -213,6 +220,19 @@ io.on('connection', (socket) => {
         playerCount: room.getPlayerCount(),
         gameState: room.gameState
       });
+
+      // If there's already another player, notify them that someone joined
+      // This helps with WebRTC negotiation
+      if (room.getPlayerCount() > 1) {
+        room.players.forEach((player, existingUserId) => {
+          if (existingUserId !== userId) {
+            io.to(player.socketId).emit('player-joined', {
+              userId,
+              playerCount: room.getPlayerCount()
+            });
+          }
+        });
+      }
       
       logger.info(`User ${userId} joined room ${roomId}`);
       
@@ -358,7 +378,7 @@ process.on('uncaughtException', (error) => {
 
 const PORT = process.env.PORT || 3001;
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   logger.info(`Strip in the Dark server running on port ${PORT}`);
   console.log(`🎭 Server running on port ${PORT}`);
   console.log(`🔒 Security features enabled`);

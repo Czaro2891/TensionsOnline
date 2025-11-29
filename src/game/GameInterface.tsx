@@ -77,80 +77,39 @@ const GameInterface: React.FC<GameInterfaceProps> = ({
     ]
   };
 
-  // Timer management
-  useEffect(() => {
-    if (gameState.timeLeft > 0 && !gameState.isPaused && gameState.gamePhase === 'playing') {
-      timerRef.current = setTimeout(() => {
-        setGameState(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
-      }, 1000);
-    } else if (gameState.timeLeft === 0 && gameState.gamePhase === 'playing') {
-      handleRoundComplete();
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-  }, [gameState.timeLeft, gameState.isPaused, gameState.gamePhase]);
-
-  // AI Message rotation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (gameState.gamePhase === 'playing') {
-        const messagePool = gameState.isPerformer ? aiMessages.performer : aiMessages.observer;
-        const randomMessage = messagePool[Math.floor(Math.random() * messagePool.length)];
-        setGameState(prev => ({ ...prev, aiMessage: randomMessage }));
-      }
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [gameState.gamePhase, gameState.isPerformer]);
-
-  // Handle remote stream
-  const handleRemoteStream = useCallback((stream: MediaStream) => {
-    setRemoteStream(stream);
-  }, []);
-
-  // Handle connection status change
-  const handleConnectionStatusChange = useCallback((status: 'connected' | 'disconnected' | 'connecting' | 'failed') => {
-    setConnectionStatus(status);
-    
-    if (status === 'connected' && gameState.gamePhase === 'waiting') {
-      startNewRound();
-    } else if (status === 'disconnected') {
-      setGameState(prev => ({ ...prev, gamePhase: 'emergency', aiMessage: 'Connection lost. Game paused.' }));
-    }
-  }, [gameState.gamePhase]);
-
-  // Start new round
+  // Start new round - declared early to be used in useEffect
   const startNewRound = useCallback(() => {
-    const allCards = [...defaultCards, ...customCards];
-    const availableCards = allCards.filter(card => !gameState.usedCards.includes(card.id));
-    
-    if (availableCards.length === 0) {
+    setGameState(prev => {
+      const allCards = [...defaultCards, ...customCards];
+      const availableCards = allCards.filter(card => !prev.usedCards.includes(card.id));
+      
       // Reset used cards if all have been used
-      setGameState(prev => ({ ...prev, usedCards: [] }));
-      return;
-    }
+      const usedCardsList = availableCards.length === 0 ? [] : prev.usedCards;
+      
+      try {
+        const card = getRandomCard(intensityLevel, usedCardsList);
+        const isPerformer = Math.random() < 0.5;
+        
+        return {
+          ...prev,
+          currentCard: card,
+          isPerformer,
+          timeLeft: card.duration,
+          gamePhase: 'playing',
+          usedCards: usedCardsList.length === 0 ? [card.id] : [...usedCardsList, card.id],
+          aiMessage: isPerformer ? 
+            'Your turn to perform. Your partner watches with anticipation...' :
+            'Watch closely. Your partner is about to perform for you...'
+        };
+      } catch (error) {
+        console.error('Failed to start new round:', error);
+        // Return previous state if card selection fails
+        return prev;
+      }
+    });
+  }, [intensityLevel, customCards]);
 
-    const card = getRandomCard(intensityLevel, gameState.usedCards);
-    const isPerformer = Math.random() < 0.5;
-    
-    setGameState(prev => ({
-      ...prev,
-      currentCard: card,
-      isPerformer,
-      timeLeft: card.duration,
-      gamePhase: 'playing',
-      usedCards: [...prev.usedCards, card.id],
-      aiMessage: isPerformer ? 
-        'Your turn to perform. Your partner watches with anticipation...' :
-        'Watch closely. Your partner is about to perform for you...'
-    }));
-  }, [intensityLevel, customCards, gameState.usedCards]);
-
-  // Handle round completion
+  // Handle round completion - declared early to be used in useEffect
   const handleRoundComplete = useCallback(() => {
     const transitionMessage = aiMessages.transition[Math.floor(Math.random() * aiMessages.transition.length)];
     
@@ -167,6 +126,58 @@ const GameInterface: React.FC<GameInterfaceProps> = ({
       startNewRound();
     }, 3000);
   }, [startNewRound]);
+
+  // Timer management
+  useEffect(() => {
+    if (gameState.timeLeft > 0 && !gameState.isPaused && gameState.gamePhase === 'playing') {
+      timerRef.current = setTimeout(() => {
+        setGameState(prev => ({ ...prev, timeLeft: prev.timeLeft - 1 }));
+      }, 1000);
+    } else if (gameState.timeLeft === 0 && gameState.gamePhase === 'playing') {
+      handleRoundComplete();
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [gameState.timeLeft, gameState.isPaused, gameState.gamePhase, handleRoundComplete]);
+
+  // AI Message rotation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (gameState.gamePhase === 'playing') {
+        const messagePool = gameState.isPerformer ? aiMessages.performer : aiMessages.observer;
+        const randomMessage = messagePool[Math.floor(Math.random() * messagePool.length)];
+        setGameState(prev => ({ ...prev, aiMessage: randomMessage }));
+      }
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [gameState.gamePhase, gameState.isPerformer]);
+
+  // Start game when connected
+  useEffect(() => {
+    if (connectionStatus === 'connected' && gameState.gamePhase === 'waiting') {
+      startNewRound();
+    }
+  }, [connectionStatus, gameState.gamePhase, startNewRound]);
+
+  // Handle remote stream
+  const handleRemoteStream = useCallback((stream: MediaStream) => {
+    setRemoteStream(stream);
+  }, []);
+
+  // Handle connection status change
+  const handleConnectionStatusChange = useCallback((status: 'connected' | 'disconnected' | 'connecting' | 'failed') => {
+    setConnectionStatus(status);
+    
+    if (status === 'disconnected') {
+      setGameState(prev => ({ ...prev, gamePhase: 'emergency', aiMessage: 'Connection lost. Game paused.' }));
+    }
+  }, []);
+
 
   // Handle pause/resume
   const handlePauseToggle = () => {
@@ -221,7 +232,7 @@ const GameInterface: React.FC<GameInterfaceProps> = ({
         addAIMessage(gameState.aiMessage);
         break;
     }
-  }, [gameState.gamePhase, gameState.aiMessage]);
+  }, [gameState.gamePhase, gameState.aiMessage, connectionStatus]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex flex-col">

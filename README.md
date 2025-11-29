@@ -173,6 +173,24 @@ npm start
 - **Narrative Engine**: Context-aware messaging
 - **Safety Monitoring**: Distress detection
 
+## 🚀 Quick Deploy to Vercel
+
+Aplikacja jest gotowa do wdrożenia na Vercel!
+
+### Szybkie wdrożenie:
+
+1. **Backend (Railway)**: 
+   - Railway.app → Deploy folder `backend/`
+   - Dodaj zmienne: `PORT=3001`, `FRONTEND_URL=twoja-aplikacja.vercel.app`
+
+2. **Frontend (Vercel)**:
+   - Vercel.com → Deploy z GitHub
+   - Dodaj zmienną: `REACT_APP_BACKEND_URL=https://app.railway.app`
+
+📖 **Pełne instrukcje**: Zobacz `DEPLOY.md` lub `README_VERCEL.md`
+
+⚠️ **Uwaga**: Socket.IO wymaga osobnego serwisu (Railway/Render). Frontend może być na Vercel.
+
 ## 🔧 Configuration
 
 ### Environment Variables

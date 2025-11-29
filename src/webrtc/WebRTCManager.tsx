@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Video, VideoOff, Mic, MicOff, Settings, AlertCircle } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
 
 interface WebRTCManagerProps {
   roomId: string;
@@ -39,15 +49,9 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
-
-  const ICE_SERVERS = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]
-  };
+  const isInitiatorRef = useRef<boolean>(false);
 
   // Get available media devices
   const getMediaDevices = useCallback(async () => {
@@ -117,31 +121,43 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
 
       // Handle remote stream
       pc.ontrack = (event) => {
-        const [remoteStream] = event.streams;
-        setRemoteStream(remoteStream);
-        onRemoteStream(remoteStream);
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
+        if (event.streams && event.streams.length > 0) {
+          const [remoteStream] = event.streams;
+          if (remoteStream) {
+            setRemoteStream(remoteStream);
+            onRemoteStream(remoteStream);
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = remoteStream;
+            }
+          }
         }
       };
 
       // Handle ICE candidates
       pc.onicecandidate = (event) => {
-        if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'ice-candidate',
+        if (event.candidate && socketRef.current?.connected) {
+          socketRef.current.emit('ice-candidate', {
             candidate: event.candidate,
             roomId,
             userId
-          }));
+          });
         }
       };
 
       // Handle connection state changes
       pc.onconnectionstatechange = () => {
         const status = pc.connectionState;
-        setConnectionStatus(status as any);
-        onConnectionStatusChange(status as any);
+        const statusMap: Record<string, 'connecting' | 'connected' | 'disconnected' | 'failed'> = {
+          'new': 'connecting',
+          'connecting': 'connecting',
+          'connected': 'connected',
+          'disconnected': 'disconnected',
+          'failed': 'failed',
+          'closed': 'disconnected'
+        };
+        const mappedStatus = statusMap[status] || 'connecting';
+        setConnectionStatus(mappedStatus);
+        onConnectionStatusChange(mappedStatus);
       };
 
       // Create data channel for game state
@@ -173,101 +189,182 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
     }
   }, [roomId, userId, getUserMedia, onRemoteStream, onConnectionStatusChange]);
 
-  // WebSocket message handler
-  const handleWebSocketMessage = useCallback(async (message: any) => {
+  // Socket.IO message handlers
+  const handleOffer = useCallback(async (data: { offer: RTCSessionDescriptionInit; fromUserId: string }) => {
     const pc = peerConnectionRef.current;
     if (!pc) return;
 
     try {
-      switch (message.type) {
-        case 'offer':
-          await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({
-              type: 'answer',
-              answer,
-              roomId,
-              userId
-            }));
-          }
-          break;
-
-        case 'answer':
-          await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
-          break;
-
-        case 'ice-candidate':
-          await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
-          break;
-
-        case 'peer-disconnected':
-          setConnectionStatus('disconnected');
-          onConnectionStatusChange('disconnected');
-          break;
-
-        case 'media-control':
-          // Handle remote media control changes
-          break;
-      }
-    } catch (error) {
-      console.error('Failed to handle WebSocket message:', error);
-    }
-  }, [roomId, userId, onConnectionStatusChange]);
-
-  // Initialize WebSocket connection
-  const initializeWebSocket = useCallback(() => {
-    const ws = new WebSocket(`ws://localhost:3001`); // Will be configured for production
-    wsRef.current = ws;
-
-    ws.onopen = async () => {
-      console.log('WebSocket connected');
-      ws.send(JSON.stringify({
-        type: 'join-room',
-        roomId,
-        userId
-      }));
-
-      try {
-        const pc = await initializeConnection();
-        
-        // Create offer if initiator
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        
-        ws.send(JSON.stringify({
-          type: 'offer',
-          offer,
+      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('answer', {
+          answer,
           roomId,
           userId
-        }));
-      } catch (error) {
-        console.error('Failed to create offer:', error);
+        });
       }
-    };
+    } catch (error) {
+      console.error('Failed to handle offer:', error);
+    }
+  }, [roomId, userId]);
 
-    ws.onmessage = (event) => {
+  const handleAnswer = useCallback(async (data: { answer: RTCSessionDescriptionInit; fromUserId: string }) => {
+    const pc = peerConnectionRef.current;
+    if (!pc) return;
+
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+    } catch (error) {
+      console.error('Failed to handle answer:', error);
+    }
+  }, []);
+
+  const handleIceCandidate = useCallback(async (data: { candidate: RTCIceCandidateInit; fromUserId: string }) => {
+    const pc = peerConnectionRef.current;
+    if (!pc) return;
+
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    } catch (error) {
+      console.error('Failed to handle ICE candidate:', error);
+    }
+  }, []);
+
+  const handlePlayerLeft = useCallback(() => {
+    setConnectionStatus('disconnected');
+    onConnectionStatusChange('disconnected');
+  }, [onConnectionStatusChange]);
+
+  const handleMediaControl = useCallback((data: { control: string; enabled: boolean; fromUserId: string }) => {
+    // Handle remote media control changes
+    console.log('Media control received:', data);
+  }, []);
+
+  // Initialize Socket.IO connection
+  const initializeWebSocket = useCallback(() => {
+    const socket = io(BACKEND_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+    
+    socketRef.current = socket;
+
+    socket.on('connect', async () => {
+      console.log('Socket.IO connected');
+      setConnectionStatus('connecting');
+      
+      socket.emit('join-room', {
+        roomId,
+        userId
+      });
+
+      // Initialize connection but don't create offer yet
       try {
-        const message = JSON.parse(event.data);
-        handleWebSocketMessage(message);
+        await initializeConnection();
       } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
+        console.error('Failed to initialize connection:', error);
+        setConnectionStatus('failed');
+        onConnectionStatusChange('failed');
       }
-    };
+    });
 
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
+    socket.on('room-state', async (data: { roomId: string; players: string[]; playerCount: number; gameState: string }) => {
+      console.log('Room state received:', data);
+      
+      const pc = peerConnectionRef.current;
+      if (!pc) return;
+
+      // Determine who should be initiator based on userId comparison
+      // Player with lexicographically smaller userId becomes initiator
+      const otherPlayers = data.players.filter(p => p !== userId);
+      
+      if (data.playerCount === 1) {
+        // We're alone, we'll be initiator when someone joins
+        isInitiatorRef.current = true;
+        console.log('Waiting for another player to join...');
+      } else if (data.playerCount === 2 && otherPlayers.length > 0) {
+        // Two players - decide initiator based on userId comparison
+        const otherPlayerId = otherPlayers[0];
+        isInitiatorRef.current = userId < otherPlayerId;
+        
+        if (isInitiatorRef.current) {
+          // We're the initiator, create offer
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            socketRef.current?.emit('offer', {
+              offer,
+              roomId,
+              userId
+            });
+            console.log('Created and sent offer as initiator');
+          } catch (error) {
+            console.error('Failed to create offer:', error);
+            setConnectionStatus('failed');
+            onConnectionStatusChange('failed');
+          }
+        } else {
+          // We're not initiator, wait for offer
+          console.log('Waiting for offer from other player...');
+        }
+      }
+    });
+
+    socket.on('player-joined', async (data: { userId: string; playerCount: number }) => {
+      console.log('Player joined:', data);
+      
+      // Only react if we were waiting (playerCount becomes 2)
+      if (data.playerCount === 2 && isInitiatorRef.current) {
+        const pc = peerConnectionRef.current;
+        if (pc) {
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            socketRef.current?.emit('offer', {
+              offer,
+              roomId,
+              userId
+            });
+            console.log('Created offer after player joined');
+          } catch (error) {
+            console.error('Failed to create offer:', error);
+          }
+        }
+      }
+    });
+
+    socket.on('offer', handleOffer);
+    socket.on('answer', handleAnswer);
+    socket.on('ice-candidate', handleIceCandidate);
+    socket.on('player-left', handlePlayerLeft);
+    socket.on('media-control', handleMediaControl);
+
+    socket.on('disconnect', () => {
+      console.log('Socket.IO disconnected');
       setConnectionStatus('disconnected');
       onConnectionStatusChange('disconnected');
-    };
+    });
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+    socket.on('connect_error', (error) => {
+      console.error('Socket.IO connection error:', error);
+      setConnectionStatus('failed');
+      onConnectionStatusChange('failed');
       onError('Connection error. Please try again.');
-    };
-  }, [roomId, userId, initializeConnection, handleWebSocketMessage, onConnectionStatusChange, onError]);
+    });
+
+    socket.on('error', (error: Error | string) => {
+      console.error('Socket.IO error:', error);
+      const errorMessage = typeof error === 'string' ? error : error.message || 'Connection error. Please try again.';
+      onError(errorMessage);
+    });
+  }, [roomId, userId, initializeConnection, handleOffer, handleAnswer, handleIceCandidate, handlePlayerLeft, handleMediaControl, onConnectionStatusChange, onError]);
 
   // Toggle video
   const toggleVideo = useCallback(() => {
@@ -278,14 +375,13 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
         setMediaControls(prev => ({ ...prev, videoEnabled: !prev.videoEnabled }));
         
         // Notify remote peer
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'media-control',
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('media-control', {
             control: 'video',
             enabled: !mediaControls.videoEnabled,
             roomId,
             userId
-          }));
+          });
         }
       }
     }
@@ -300,14 +396,13 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
         setMediaControls(prev => ({ ...prev, audioEnabled: !prev.audioEnabled }));
         
         // Notify remote peer
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'media-control',
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('media-control', {
             control: 'audio',
             enabled: !mediaControls.audioEnabled,
             roomId,
             userId
-          }));
+          });
         }
       }
     }
@@ -345,7 +440,8 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
     }
   }, [getUserMedia, selectedDevices, onError]);
 
-  // Send game data
+  // Send game data (reserved for future use)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const sendGameData = useCallback((data: any) => {
     if (dataChannelRef.current?.readyState === 'open') {
       dataChannelRef.current.send(JSON.stringify(data));
@@ -363,8 +459,8 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
     }
-    if (wsRef.current) {
-      wsRef.current.close();
+    if (socketRef.current) {
+      socketRef.current.disconnect();
     }
     if (dataChannelRef.current) {
       dataChannelRef.current.close();
@@ -377,7 +473,7 @@ export const WebRTCManager: React.FC<WebRTCManagerProps> = ({
     initializeWebSocket();
     
     return cleanup;
-  }, []);
+  }, [cleanup, getMediaDevices, initializeWebSocket]);
 
   // Handle device changes
   useEffect(() => {

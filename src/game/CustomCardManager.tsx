@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Edit, Trash2, Import, Export, Tag, Save, X, Check, Search } from 'lucide-react';
+import { Plus, Edit, Trash2, Import, Download, Save, X, Search } from 'lucide-react';
 import { GameCard } from './CardSystem';
 
 interface CustomCardManagerProps {
@@ -51,11 +51,7 @@ const CustomCardManager: React.FC<CustomCardManagerProps> = ({ userId, onCardsUp
     spicy: 'bg-red-500'
   };
 
-  useEffect(() => {
-    loadCustomCards();
-  }, [userId]);
-
-  const loadCustomCards = () => {
+  const loadCustomCards = useCallback(() => {
     try {
       const saved = localStorage.getItem(`customCards_${userId}`);
       if (saved) {
@@ -66,7 +62,11 @@ const CustomCardManager: React.FC<CustomCardManagerProps> = ({ userId, onCardsUp
     } catch (error) {
       console.error('Failed to load custom cards:', error);
     }
-  };
+  }, [userId, onCardsUpdate]);
+
+  useEffect(() => {
+    loadCustomCards();
+  }, [loadCustomCards]);
 
   const saveCustomCards = (cards: GameCard[]) => {
     try {
@@ -136,11 +136,15 @@ const CustomCardManager: React.FC<CustomCardManagerProps> = ({ userId, onCardsUp
   };
 
   const handleDelete = (cardId: string) => {
-    if (confirm('Are you sure you want to delete this card?')) {
+    // Use a custom modal or UI prompt in a real app instead of window.confirm for accessibility and UI consistency.
+    // For now, use window.confirm as a fallback, but suppress the lint warning.
+    // eslint-disable-next-line no-restricted-globals
+    if (window.confirm('Are you sure you want to delete this card?')) {
       const updatedCards = customCards.filter(card => card.id !== cardId);
       saveCustomCards(updatedCards);
     }
   };
+
 
   const handleExport = () => {
     const dataStr = JSON.stringify(customCards, null, 2);
@@ -299,7 +303,7 @@ const CustomCardManager: React.FC<CustomCardManagerProps> = ({ userId, onCardsUp
               onClick={handleExport}
               className="flex items-center justify-center space-x-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
             >
-              <Export className="w-5 h-5" />
+              <Download className="w-5 h-5" />
               <span>Export Cards</span>
             </motion.button>
             <label className="flex items-center justify-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors cursor-pointer">

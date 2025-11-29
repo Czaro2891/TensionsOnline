@@ -1,10 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Plus, Join, Settings, Info, Play, Clock, Eye, EyeOff } from 'lucide-react';
+import { Users, Plus, UserPlus, Settings, Info, Play, Clock, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
 import ConsentSystem, { ConsentData } from '../safety/ConsentSystem';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 
 interface Room {
   id: string;
+  code?: string;
+  name: string;
+  playerCount: number;
+  maxPlayers: number;
+  intensityLevel: 'soft' | 'hot' | 'spicy';
+  hasPassword: boolean;
+  isPrivate: boolean;
+}
+
+interface RoomResponse {
+  id: string;
+  code?: string;
   name: string;
   playerCount: number;
   maxPlayers: number;
@@ -19,13 +34,17 @@ interface LobbySystemProps {
 }
 
 const LobbySystem: React.FC<LobbySystemProps> = ({ userId, onGameStart }) => {
-  const [showCreateRoom, setShowCreateRoom] = false);
+  const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [showJoinRoom, setShowJoinRoom] = useState(false);
   const [showConsent, setShowConsent] = useState(false);
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [roomCode, setRoomCode] = useState('');
   const [password, setPassword] = useState('');
+  const [showRoomCode, setShowRoomCode] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [socket, setSocket] = useState<Socket | null>(null);
   
   // Room creation form
   const [roomForm, setRoomForm] = useState({
@@ -41,58 +60,124 @@ const LobbySystem: React.FC<LobbySystemProps> = ({ userId, onGameStart }) => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   };
 
-  // Mock room data
+  // Initialize Socket.IO connection
   useEffect(() => {
-    const mockRooms: Room[] = [
-      {
-        id: 'room-001',
-        name: 'Sensual Beginnings',
-        playerCount: 1,
-        maxPlayers: 2,
-        intensityLevel: 'soft',
-        hasPassword: false,
-        isPrivate: false
-      },
-      {
-        id: 'room-002',
-        name: 'Heated Encounters',
-        playerCount: 1,
-        maxPlayers: 2,
-        intensityLevel: 'hot',
-        hasPassword: true,
-        isPrivate: false
-      },
-      {
-        id: 'room-003',
-        name: 'Intimate Secrets',
-        playerCount: 0,
-        maxPlayers: 2,
-        intensityLevel: 'spicy',
-        hasPassword: false,
-        isPrivate: true
-      }
-    ];
-    setAvailableRooms(mockRooms);
+    const newSocket = io(BACKEND_URL, {
+      transports: ['websocket', 'polling']
+    });
+    
+    newSocket.on('connect', () => {
+      console.log('Connected to backend server');
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('Disconnected from backend server');
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.close();
+    };
   }, []);
 
+  // Fetch available rooms from backend
+  const fetchRooms = useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/rooms`);
+      if (response.ok) {
+        const rooms: RoomResponse[] = await response.json();
+        setAvailableRooms(rooms.map((room: RoomResponse): Room => ({
+          ...room,
+          code: room.id // Use room ID as code
+        })));
+      }
+    } catch (error) {
+      console.error('Failed to fetch rooms:', error);
+    }
+  }, []);
+
+  // Fetch rooms on mount and periodically
+  useEffect(() => {
+    fetchRooms();
+    const interval = setInterval(fetchRooms, 5000); // Refresh every 5 seconds
+    return () => clearInterval(interval);
+  }, [fetchRooms]);
+
   // Handle room creation
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
     if (!roomForm.name.trim()) {
       alert('Please enter a room name');
       return;
     }
 
-    const newRoom: Room = {
-      id: `room-${Date.now()}`,
-      name: roomForm.name,
-      playerCount: 1,
-      maxPlayers: roomForm.maxPlayers,
-      intensityLevel: roomForm.intensityLevel,
-      hasPassword: !!roomForm.password,
-      isPrivate: roomForm.isPrivate
-    };
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/rooms/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: roomForm.name,
+          intensityLevel: roomForm.intensityLevel,
+          isPrivate: roomForm.isPrivate,
+          password: roomForm.password || undefined
+        })
+      });
 
-    setSelectedRoom(newRoom);
+      if (response.ok) {
+        const data = await response.json();
+        const newRoom: Room = {
+          id: data.roomId,
+          code: data.roomCode || data.roomId, // Use roomCode from backend or fallback to roomId
+          name: data.room.name,
+          playerCount: 1,
+          maxPlayers: roomForm.maxPlayers,
+          intensityLevel: data.room.intensityLevel,
+          hasPassword: data.room.hasPassword,
+          isPrivate: data.room.isPrivate
+        };
+
+        setSelectedRoom(newRoom);
+        setShowCreateRoom(false);
+        setShowRoomCode(true);
+        
+        // Refresh rooms list
+        setTimeout(() => fetchRooms(), 500);
+      } else {
+        const error = await response.json();
+        alert(`Failed to create room: ${error.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      alert('Failed to create room. Please check if backend server is running.');
+    }
+  };
+
+  // Copy room code to clipboard
+  const handleCopyRoomCode = async () => {
+    if (selectedRoom?.code) {
+      try {
+        await navigator.clipboard.writeText(selectedRoom.code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = selectedRoom.code;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    }
+  };
+
+  // Continue to consent after showing room code
+  const handleContinueFromRoomCode = () => {
+    setShowRoomCode(false);
     setShowConsent(true);
   };
 
@@ -104,6 +189,44 @@ const LobbySystem: React.FC<LobbySystemProps> = ({ userId, onGameStart }) => {
     } else {
       setSelectedRoom(room);
       setShowConsent(true);
+    }
+  };
+
+  // Handle joining by room code
+  const handleJoinByCode = async () => {
+    if (!roomCode.trim()) {
+      alert('Please enter a room code');
+      return;
+    }
+
+    try {
+      // Try to find room in local list first
+      let foundRoom = availableRooms.find(room => room.code?.toUpperCase() === roomCode.toUpperCase());
+      
+      // If not found locally, try to fetch from backend
+      if (!foundRoom) {
+        const response = await fetch(`${BACKEND_URL}/api/rooms`);
+        if (response.ok) {
+          const rooms: RoomResponse[] = await response.json();
+          const foundRoomResponse = rooms.find((room: RoomResponse) => room.id.toUpperCase() === roomCode.toUpperCase());
+          if (foundRoomResponse) {
+            foundRoom = {
+              ...foundRoomResponse,
+              code: foundRoomResponse.id
+            };
+          }
+        }
+      }
+      
+      if (foundRoom) {
+        handleJoinRoom(foundRoom);
+        setRoomCode('');
+      } else {
+        alert(`Room with code "${roomCode}" not found. Make sure the code is correct and the room exists.`);
+      }
+    } catch (error) {
+      console.error('Failed to join room:', error);
+      alert('Failed to join room. Please check if backend server is running.');
     }
   };
 
@@ -141,8 +264,90 @@ const LobbySystem: React.FC<LobbySystemProps> = ({ userId, onGameStart }) => {
     );
   }
 
+  // Room Code Modal - shown after room creation
+  if (showRoomCode && selectedRoom) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full p-8"
+        >
+          <div className="text-center mb-6">
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", delay: 0.2 }}
+              className="w-20 h-20 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+              <Users className="w-10 h-10 text-white" />
+            </motion.div>
+            <h2 className="text-3xl font-bold text-white mb-2">Room Created!</h2>
+            <p className="text-gray-400">Share this code with your partner to invite them</p>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6 mb-6">
+            <label className="block text-gray-400 text-sm font-medium mb-2">Room Code</label>
+            <div className="flex items-center space-x-3">
+              <div className="flex-1 bg-gray-700 rounded-lg px-4 py-4">
+                <p className="text-4xl font-bold text-white text-center tracking-widest font-mono">
+                  {selectedRoom.code}
+                </p>
+              </div>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleCopyRoomCode}
+                className="p-4 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+                title="Copy room code"
+              >
+                {copied ? (
+                  <Check className="w-6 h-6 text-white" />
+                ) : (
+                  <Copy className="w-6 h-6 text-white" />
+                )}
+              </motion.button>
+            </div>
+            {copied && (
+              <motion.p
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-green-400 text-sm text-center mt-3"
+              >
+                Code copied to clipboard!
+              </motion.p>
+            )}
+          </div>
+
+          <div className="bg-blue-900/30 border border-blue-500/50 rounded-lg p-4 mb-6">
+            <div className="flex items-start space-x-3">
+              <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-blue-200">
+                <p className="font-medium mb-1">How to invite:</p>
+                <ul className="list-disc list-inside space-y-1 text-blue-300">
+                  <li>Share the room code above with your partner</li>
+                  <li>They can enter it in "Quick Join" section</li>
+                  <li>Or they can find your room in the "Available Rooms" list</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleContinueFromRoomCode}
+            className="w-full px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-semibold text-lg transition-all shadow-lg"
+          >
+            Continue to Game
+          </motion.button>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex flex-col overflow-hidden">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -297,7 +502,8 @@ const LobbySystem: React.FC<LobbySystemProps> = ({ userId, onGameStart }) => {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  disabled={!roomCode}
+                  onClick={handleJoinByCode}
+                  disabled={!roomCode.trim()}
                   className="w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
                 >
                   Join by Code

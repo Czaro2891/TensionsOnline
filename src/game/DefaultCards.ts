@@ -208,6 +208,22 @@ export const getCardsByLevel = (level: 'soft' | 'hot' | 'spicy'): GameCard[] => 
 
 export const getRandomCard = (level: 'soft' | 'hot' | 'spicy', excludeIds: string[] = []): GameCard => {
   const availableCards = getCardsByLevel(level).filter(card => !excludeIds.includes(card.id));
+  
+  if (availableCards.length === 0) {
+    // Fallback: return first card of the level if all cards are excluded
+    const fallbackCards = getCardsByLevel(level);
+    if (fallbackCards.length > 0) {
+      return fallbackCards[0];
+    }
+    // Ultimate fallback: return first soft card
+    const softCards = defaultCards.filter(card => card.level === 'soft');
+    if (softCards.length > 0) {
+      return softCards[0];
+    }
+    // Should never happen, but return a safe default
+    throw new Error('No cards available');
+  }
+  
   const randomIndex = Math.floor(Math.random() * availableCards.length);
   return availableCards[randomIndex];
 };

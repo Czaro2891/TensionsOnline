@@ -1,0 +1,15 @@
+node_modules
+backend
+*.log
+.env
+.env.local
+.vscode
+.idea
+coverage
+.DS_Store
+*.md
+!README.md
+docker-compose.yml
+Dockerfile.*
+nginx.conf
+
