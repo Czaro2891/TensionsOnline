@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Plus, UserPlus, Settings, Info, Play, Clock, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { Users, Plus, Settings, Info, EyeOff, Copy, Check } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import ConsentSystem, { ConsentData } from '../safety/ConsentSystem';
 
@@ -38,12 +38,14 @@ const LobbySystem: React.FC<LobbySystemProps> = ({ userId, onGameStart }) => {
   const [showJoinRoom, setShowJoinRoom] = useState(false);
   const [showConsent, setShowConsent] = useState(false);
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [showSettings, setShowSettings] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [roomCode, setRoomCode] = useState('');
   const [password, setPassword] = useState('');
   const [showRoomCode, setShowRoomCode] = useState(false);
   const [copied, setCopied] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [socket, setSocket] = useState<Socket | null>(null);
   
   // Room creation form
@@ -54,11 +56,6 @@ const LobbySystem: React.FC<LobbySystemProps> = ({ userId, onGameStart }) => {
     password: '',
     maxPlayers: 2
   });
-
-  // Generate room code
-  const generateRoomCode = () => {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
-  };
 
   // Initialize Socket.IO connection
   useEffect(() => {

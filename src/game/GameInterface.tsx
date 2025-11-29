@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Pause, Square, Clock, Users, Settings, MessageCircle, Heart } from 'lucide-react';
+import { Square, Clock, Users, Settings, MessageCircle, Heart } from 'lucide-react';
 import WebRTCManager from '../webrtc/WebRTCManager';
 import CardSystem, { GameCard } from './CardSystem';
 import { defaultCards, getRandomCard } from './DefaultCards';
@@ -42,14 +42,12 @@ const GameInterface: React.FC<GameInterfaceProps> = ({
     usedCards: []
   });
 
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'failed'>('connecting');
   const [showSettings, setShowSettings] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [messages, setMessages] = useState<Array<{ id: string; text: string; sender: 'ai' | 'user' }>>([]);
 
   const timerRef = React.useRef<NodeJS.Timeout | null>(null);
-  const aiSupervisorRef = React.useRef<any>(null);
 
   // AI Supervisor Messages
   const aiMessages = {
@@ -125,6 +123,7 @@ const GameInterface: React.FC<GameInterfaceProps> = ({
     setTimeout(() => {
       startNewRound();
     }, 3000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startNewRound]);
 
   // Timer management
@@ -155,6 +154,7 @@ const GameInterface: React.FC<GameInterfaceProps> = ({
     }, 15000);
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState.gamePhase, gameState.isPerformer]);
 
   // Start game when connected
@@ -165,8 +165,8 @@ const GameInterface: React.FC<GameInterfaceProps> = ({
   }, [connectionStatus, gameState.gamePhase, startNewRound]);
 
   // Handle remote stream
-  const handleRemoteStream = useCallback((stream: MediaStream) => {
-    setRemoteStream(stream);
+  const handleRemoteStream = useCallback((_stream: MediaStream) => {
+    // Stream is handled by WebRTCManager component
   }, []);
 
   // Handle connection status change
